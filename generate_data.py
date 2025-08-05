@@ -5,9 +5,9 @@ import math
 
 class GenerateData:
     
-    CAT_DEATH = 'CAT_DEATH'
-    CAT_HOSPITAL = 'CAT_HOSPITAL'
-    CAT_HOME = 'CAT_HOME'
+    CAT_HOME = 0
+    CAT_HOSPITAL = 1
+    CAT_DEATH = 2
     
     def rnd_inputs(self):
         """Return a random set of inputs"""
