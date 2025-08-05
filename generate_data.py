@@ -156,12 +156,12 @@ def plot_outcomes(plot_paths=False):
             inp = {
                 'prev_infection_a': 0,
                 'prev_infection_b': 0,
-                'acute_infection_b': 1,
-                'cancer_diagnosis': 0, #1,
+                'acute_infection_b': 0,
+                'cancer_diagnosis': 1,
                 'weight_deviation': weight,
                 'age': age,
-                'blood_pressure_dev': 0, #40,
-                'smoked_years': 0, #5
+                'blood_pressure_dev': 0,
+                'smoked_years': 5,
             }
             c = o.input_to_category(inp)
             if plot_paths:

@@ -87,15 +87,6 @@ class ScoringModel:
         
     def training_data(self, is_training: bool):
         """Generator for training and validation data"""
-        if not is_training:
-            # providing validation data - Always provide the same data for consistency
-            if self.validation_data is None:
-                self.validation_data = [self.get_data_batch() for s in range(config["validation_steps"])]
-            for v in self.validation_data:
-                yield v
-            print("Validation data exhausted")
-            return
-        
         while True:
             i, t = self.get_data_batch()
             yield i, t
