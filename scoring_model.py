@@ -11,7 +11,7 @@ config = {
     "num_inputs": 8,
     "num_categories": 3,
     "steps_per_epoch": 10000,
-    "validation_steps": 50,
+    "validation_steps": 500,
     "epochs": 100,
     "batch_size": 64,
 }

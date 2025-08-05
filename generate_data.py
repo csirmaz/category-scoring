@@ -61,7 +61,7 @@ class GenerateData:
         
         virtual_age = inp['age'] + inp['smoked_years'] * 1.2 + inp['weight_deviation'] * 0.1
         immune_overdrive = inp['cancer_diagnosis'] * 10 - inp['smoked_years'] * 2 - inp['age'] * .1 + inp['prev_infection_b'] * 5
-        stressors = inp['blood_pressure_dev'] + inp['weight_deviation'] * .6 + inp['cancer_diagnosis'] * 30
+        stressors = inp['blood_pressure_dev'] + inp['weight_deviation'] * .6 + inp['cancer_diagnosis'] * 30 + inp['age'] * .2 + inp['smoked_years'] * .8
         
         if inp['acute_infection_b'] and (not inp['prev_infection_b']) and (not inp['prev_infection_a']) and virtual_age > 45:
             return (self.CAT_DEATH, 'path1')
@@ -73,12 +73,8 @@ class GenerateData:
         
         if stressors + virtual_age > 160:
             return (self.CAT_DEATH, 'path4')
-        if stressors > 120:
+        if stressors > 50 and virtual_age > 30:
             return (self.CAT_HOSPITAL, 'path5')
-        if inp['blood_pressure_dev'] > 85:
-            return (self.CAT_HOSPITAL, 'path6')
-        if inp['weight_deviation'] > 80:
-            return (self.CAT_HOSPITAL, 'path7')
         
         if inp['prev_infection_a'] and (not inp['acute_infection_b']):
             return (self.CAT_HOME, 'path8')
@@ -87,10 +83,10 @@ class GenerateData:
         if inp['prev_infection_a'] and inp['acute_infection_b'] and inp['age'] < 22:
             return (self.CAT_HOME, 'path10')
         
-        if inp['acute_infection_b']:
+        if inp['acute_infection_b'] and virtual_age > 18:
             return (self.CAT_HOSPITAL, 'path11')
         
-        if inp['age'] > 80:
+        if inp['age'] + stressors * .2 > 80:
             return (self.CAT_HOSPITAL, 'path12')
 
         return (self.CAT_HOME, 'path13')
@@ -147,7 +143,7 @@ def test_normalized_variance():
         var = np.var(v)
         print(f"{ix}: var={var} mean={mean}")
         
-def plot_outcomes():
+def plot_outcomes(plot_paths=False):
     """Create a plot of outcomes along 2 variables"""
     o = GenerateData()
     display = {
@@ -160,15 +156,19 @@ def plot_outcomes():
             inp = {
                 'prev_infection_a': 0,
                 'prev_infection_b': 0,
-                'acute_infection_b': 0,
-                'cancer_diagnosis': 1,
+                'acute_infection_b': 1,
+                'cancer_diagnosis': 0, #1,
                 'weight_deviation': weight,
                 'age': age,
-                'blood_pressure_dev': 40,
-                'smoked_years': 5
+                'blood_pressure_dev': 0, #40,
+                'smoked_years': 0, #5
             }
             c = o.input_to_category(inp)
-            print(display[c[0]], end="")
+            if plot_paths:
+                c = c[1][-2:] + ","
+            else:
+                c = display[c[0]]
+            print(c, end="")
         print("")
             
     
@@ -180,5 +180,5 @@ if __name__ == "__main__":
     # test_inputs_mean_variance()
     # test_normalized_variance()
     
-    plot_outcomes()
+    plot_outcomes(plot_paths=False)
 
