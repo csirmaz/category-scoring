@@ -21,16 +21,20 @@ config = {
 class ScoringModel:
     """Define and train a model"""
     
-    def __init__(self):
-        # TODO types: regular NN, NN+bottlenect, linear+bottlenect
+    def __init__(self, model_type):
+        """Build and train a model. Available types:
+            - classified: Classic classifier network
+            - linear-bottleneck: Approximate categories using a linear regression, bottleneck, and category approximator
+        """
+        self.model_type = model_type
         self.model = None
         self.encode_layer = None
         self.cat_approx_layer = None
         self.validation_data = None
         self.data_generator = GenerateData()
-
-    def build_model(self):
-        """Build the keras model"""
+        
+    def build_bottleneck_model(self):
+        """Build a bottleneck model"""
         input_tensor = keras.Input(shape=(config["num_inputs"],))
         self.encode_layer = keras.layers.Dense(1)  # creates the 1-wide bottleneck
         t = self.encode_layer(input_tensor)
@@ -52,8 +56,26 @@ class ScoringModel:
         t = keras.layers.Concatenate()(values2)
 
         t = keras.layers.Softmax(axis=-1)(t)
+        return input_tensor, t
+    
+    def build_classifier_model(self):
+        """Build a classic classifier model"""
+        input_tensor = keras.Input(shape=(config["num_inputs"],))
+        t = input_tensor
+        for layer_num in range(6):
+            t = keras.layers.Dense(config["num_inputs"], activation="relu")(t)
+        t = keras.layers.Dense(config["num_categories"])(t)
+        t = keras.layers.Softmax(axis=-1)(t)
+        return input_tensor, t
+
+    def build_model(self):
+        """Build the keras model"""
+        if self.model_type in ["linear-bottleneck"]:
+            input_tensor, outputs = self.build_bottleneck_model()
+        if self.model_type == "classifier":
+            input_tensor, outputs = self.build_classifier_model()
         
-        self.model = keras.Model(inputs=input_tensor, outputs=t)
+        self.model = keras.Model(inputs=input_tensor, outputs=outputs)
         self.model.compile(
             loss=keras.losses.SparseCategoricalCrossentropy(from_logits=False),
             optimizer=keras.optimizers.Adam(),
@@ -61,6 +83,8 @@ class ScoringModel:
         )
 
     def print_weights(self):
+        if self.model_type != "linear-bottleneck":
+            return
         e = self.encode_layer.get_weights()
         a = self.cat_approx_layer.get_weights()
         data = {
