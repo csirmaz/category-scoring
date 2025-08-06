@@ -24,6 +24,21 @@ class GenerateData:
             'smoked_years': 0 if r[7] < .5 else (r[8] * (age - 16.) + 2.)
         }
     
+    
+    def input_labels(self):
+        """Provides the labels for the inputs; mirrors normalize_inputs()"""
+        return [
+            'Prev infection A  ',
+            'Prev infection B  ',
+            'Acute infection B ',
+            'Cancer diagnosis  ',
+            'Weight deviation  ',
+            'Age               ',
+            'Blood pressure dev',
+            'Smoked years      '
+        ]
+    
+    
     def normalize_inputs(self, inp):
         """Make the inputs zero mean unit variance. See test_inputs_mean_variance() for measuring mean, var for smoked_years"""
         return [
@@ -103,6 +118,7 @@ def test_cat_distribution():
     print(stats)
     # Output: {'CAT_DEATH': 3439, 'CAT_HOSPITAL': 3323, 'CAT_HOME': 3238}
 
+
 def test_path_distribution():
     """To check the complexity of the toy example, test whether the individual paths occur with some useful frequency"""
     o = GenerateData()
@@ -112,6 +128,7 @@ def test_path_distribution():
         c = o.input_to_category(r)
         stats[c[1]] += 1
     print(stats)
+
 
 def test_inputs_mean_variance():
     """Calculate the mean and variance of input features"""
@@ -128,6 +145,7 @@ def test_inputs_mean_variance():
         var = np.var(v)
         print(f"{k}: var={var} mean={mean}")
 
+
 def test_normalized_variance():
     """Test the mean/variance of the normalized input"""
     samples = 1000000
@@ -143,6 +161,7 @@ def test_normalized_variance():
         var = np.var(v)
         print(f"{ix}: var={var} mean={mean}")
         
+
 def plot_outcomes(plot_paths=False):
     """Create a plot of outcomes along 2 variables"""
     o = GenerateData()

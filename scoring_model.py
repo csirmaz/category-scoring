@@ -135,9 +135,9 @@ class ScoringModel:
         inputs = []
         targets = []
         for i in range(config["batch_size"]):
-            r = self.data_generator.rnd_inputs()
-            inputs.append(self.data_generator.normalize_inputs(r))
-            targets.append([self.data_generator.input_to_category(r)[0]])
+            raw_inputs = self.data_generator.rnd_inputs()
+            inputs.append(self.data_generator.normalize_inputs(raw_inputs))
+            targets.append([self.data_generator.input_to_category(raw_inputs)[0]])
         if self.model_type == "predict-score":
             return np.array(inputs, dtype="float32"), np.array(targets, dtype="float32")
         return np.array(inputs, dtype="float32"), np.array(targets)
@@ -158,8 +158,24 @@ class ScoringModel:
                "biases": a[1].tolist()
             }
         }
-        print(json.dumps(data))
-        self.extract_thresholds(data)
+        # print(json.dumps(data))
+        
+        # Gather the linear model
+        weights = [w[0] for w in data["encode"]["weights"]]
+        raw_thresholds = self.extract_thresholds(data)
+        thresholds = [t - data['encode']['biases'][0] for t in raw_thresholds]
+        
+        # Print parameters
+        input_labels = self.data_generator.input_labels()
+        for ix, w in enumerate(weights):
+            print(f"{input_labels[ix]} weight: {w}")
+            
+        for t in thresholds:
+            print(f"Threshold: {t}")
+            
+        # Try the linear model
+        self.try_linear_model(weights, thresholds)
+        
         print("----- end -----")
 
 
@@ -186,7 +202,39 @@ class ScoringModel:
             db = biases[i+1] - biases[i]
             dw = weights[i] - weights[i+1]
             thresholds.append("inf" if dw == 0 else db / dw)
-        print(f"Thresholds between categories: {thresholds}")
+        # print(f"Raw thresholds between categories: {thresholds}")
+        return thresholds
+    
+    
+    def try_linear_model(self, weights, thresholds):
+        """Try the linear model learnt by the linear_bottleneck model"""
+        samples = 10
+        for i in range(samples):
+            raw_inputs = self.data_generator.rnd_inputs()
+            normalized_inputs = self.data_generator.normalize_inputs(raw_inputs)
+            target = self.data_generator.input_to_category(raw_inputs)[0]
+            
+            # Calculate linear combination
+            score = 0
+            for j, v in enumerate(normalized_inputs):
+                score += weights[j] * v
+                
+            #print(f"Raw inputs: {raw_inputs}")
+            #print(f"Normalized: {normalized_inputs}")
+            #print(f"Score: {score}")
+            
+            # Use thresholds to predict category
+            if thresholds[0] > thresholds[1]:
+                # The middle category is never predicted
+                category = "n/a"
+            elif score < thresholds[0]:
+                category = 0
+            elif score < thresholds[1]:
+                category = 1
+            else:
+                category = 2
+            
+            print(f"Sample #{i}: target={target} score={score:+.2f} predicted={category} {'ok' if category==target else 'x'}")
         
         
     def eval_score_predictor(self):
