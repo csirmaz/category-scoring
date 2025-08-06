@@ -3,6 +3,7 @@
 import keras
 import numpy as np
 import json
+import math
 
 from generate_data import GenerateData
 
@@ -88,7 +89,7 @@ class ScoringModel:
         """Build a score predictor model with a single output"""
         input_tensor = keras.Input(shape=(config["num_inputs"],))
         t = input_tensor
-        for layer_num in range(6):
+        for layer_num in range(2):
             t = keras.layers.Dense(config["num_inputs"], activation="relu")(t)
         t = keras.layers.Dense(1)(t)
 
@@ -201,9 +202,11 @@ class ScoringModel:
                 continue
             v = int((v + .5) * 20.)
             histogram[v] += 1
-        
-            
-        print(y)
+        vertical_step = max(histogram) / 10.
+        for row in range(10):
+            for v in histogram:
+                print("#" if v > (10 - row - 1) * vertical_step else ".", end="")
+            print("")
         print("----- end -----")
         
 
