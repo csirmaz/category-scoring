@@ -23,22 +23,24 @@ class ScoringModel:
     
     def __init__(self, model_type):
         """Build and train a model. Available types:
-            - classified: Classic classifier network
+            - classifier: Classic classifier network
+            - predict-score: Predict pre-set scores
             - linear-bottleneck: Approximate categories using a linear regression, bottleneck, and category approximator
         """
         self.model_type = model_type
         self.model = None
         self.encode_layer = None
         self.cat_approx_layer = None
-        self.validation_data = None
         self.data_generator = GenerateData()
+
         
-    def build_bottleneck_model(self):
-        """Build a bottleneck model"""
+    def build_linear_bottleneck_model(self):
+        """Build the final, linear bottleneck model"""
         input_tensor = keras.Input(shape=(config["num_inputs"],))
-        self.encode_layer = keras.layers.Dense(1)  # creates the 1-wide bottleneck
+        self.encode_layer = keras.layers.Dense(1)  # encoder - creates the 1-wide bottleneck
         t = self.encode_layer(input_tensor)
         
+        # decoder
         self.cat_approx_layer = keras.layers.Dense(config["num_categories"], kernel_constraint="NonNeg")
         t = self.cat_approx_layer(t)
         
@@ -56,7 +58,14 @@ class ScoringModel:
         t = keras.layers.Concatenate()(values2)
 
         t = keras.layers.Softmax(axis=-1)(t)
-        return input_tensor, t
+        
+        self.model = keras.Model(inputs=input_tensor, outputs=t)
+        self.model.compile(
+            loss=keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+            optimizer=keras.optimizers.Adam(),
+            metrics=["accuracy"]
+        )
+
     
     def build_classifier_model(self):
         """Build a classic classifier model"""
@@ -66,38 +75,41 @@ class ScoringModel:
             t = keras.layers.Dense(config["num_inputs"], activation="relu")(t)
         t = keras.layers.Dense(config["num_categories"])(t)
         t = keras.layers.Softmax(axis=-1)(t)
-        return input_tensor, t
 
-    def build_model(self):
-        """Build the keras model"""
-        if self.model_type in ["linear-bottleneck"]:
-            input_tensor, outputs = self.build_bottleneck_model()
-        if self.model_type == "classifier":
-            input_tensor, outputs = self.build_classifier_model()
-        
-        self.model = keras.Model(inputs=input_tensor, outputs=outputs)
+        self.model = keras.Model(inputs=input_tensor, outputs=t)
         self.model.compile(
             loss=keras.losses.SparseCategoricalCrossentropy(from_logits=False),
             optimizer=keras.optimizers.Adam(),
             metrics=["accuracy"]
         )
 
-    def print_weights(self):
-        if self.model_type != "linear-bottleneck":
-            return
-        e = self.encode_layer.get_weights()
-        a = self.cat_approx_layer.get_weights()
-        data = {
-           "encode": {
-               "weights": e[0].tolist(),
-               "biases": e[1].tolist()
-            },
-           "cat_appox": {
-               "weights": a[0].tolist(),
-               "biases": a[1].tolist()
-            }
-        }
-        print(json.dumps(data))
+
+    def build_predict_score_model(self):
+        """Build a score predictor model with a single output"""
+        input_tensor = keras.Input(shape=(config["num_inputs"],))
+        t = input_tensor
+        for layer_num in range(6):
+            t = keras.layers.Dense(config["num_inputs"], activation="relu")(t)
+        t = keras.layers.Dense(1)(t)
+
+        self.model = keras.Model(inputs=input_tensor, outputs=t)
+        self.model.compile(
+            loss=keras.losses.MeanSquaredError(),
+            optimizer=keras.optimizers.Adam(),
+            metrics=[keras.metrics.MeanAbsoluteError()]
+        )
+        
+
+    def build_model(self):
+        """Build the keras model"""
+        if self.model_type == "classifier":
+            self.build_classifier_model()
+        if self.model_type == "predict-score":
+            self.build_predict_score_model()
+        if self.model_type == "linear-bottleneck":
+            self.build_linear_bottleneck_model()
+        self.model.summary()
+
 
     def fit(self):
         self.model.fit(
@@ -108,12 +120,14 @@ class ScoringModel:
             epochs=config["epochs"],
             callbacks=[ScoringCallback(self)]            
         )
+
         
     def training_data(self, is_training: bool):
         """Generator for training and validation data"""
         while True:
             i, t = self.get_data_batch()
             yield i, t
+
                 
     def get_data_batch(self):
         """Return a batch of data from the toy example"""
@@ -123,7 +137,74 @@ class ScoringModel:
             r = self.data_generator.rnd_inputs()
             inputs.append(self.data_generator.normalize_inputs(r))
             targets.append([self.data_generator.input_to_category(r)[0]])
+        if self.model_type == "predict-score":
+            return np.array(inputs, dtype="float32"), np.array(targets, dtype="float32")
         return np.array(inputs, dtype="float32"), np.array(targets)
+
+        
+    def eval_bottleneck_model(self):
+        print("----- Evaluating the bottleneck model -----")
+        # Get the weights and biases
+        e = self.encode_layer.get_weights()
+        a = self.cat_approx_layer.get_weights()
+        data = {
+           "encode": {
+               "weights": e[0].tolist(),
+               "biases": e[1].tolist()
+            },
+           "cat_approx": {
+               "weights": a[0].tolist(),
+               "biases": a[1].tolist()
+            }
+        }
+        print(json.dumps(data))
+        self.extract_thresholds(data)
+        print("----- end -----")
+
+
+    def extract_thresholds(self, data):
+        """Extract thresholds from the cat_approx layer"""
+        ca = data["cat_approx"]
+        # Don't forget that we apply a cascading sum
+        # Extracting the actual weights and biases
+        length = len(ca["weights"][0])
+        weights = [0 for i in range(length)]
+        biases = [0 for i in range(length)]
+        for i in range(length):
+            for j in range(i, length):
+                weights[j] += ca["weights"][0][i]
+                biases[j] += ca["biases"][i]
+                
+        # Now we know that the weights are in increasing order, but let's sanity check
+        for i in range(length-1):
+            assert weights[i] <= weights[i+1]
+        
+        # Solve the equations
+        thresholds = []
+        for i in range(length-1):
+            db = biases[i+1] - biases[i]
+            dw = weights[i] - weights[i+1]
+            thresholds.append("inf" if dw == 0 else db / dw)
+        print(f"Thresholds between categories: {thresholds}")
+        
+        
+    def eval_score_predictor(self):
+        """Evaluate the score predictor model"""
+        print("----- Evaluating the score predictor model -----")
+        y = self.model.predict_on_batch(self.get_data_batch()[0])
+        # visualize the values
+        # -.5 to 2.5
+        histogram = [0 for i in range(60)]
+        for v in y:
+            v = v[0]
+            if v < -.5 or v >= 2.5:
+                continue
+            v = int((v + .5) * 20.)
+            histogram[v] += 1
+        
+            
+        print(y)
+        print("----- end -----")
         
 
 class ScoringCallback(keras.callbacks.Callback):
@@ -135,5 +216,8 @@ class ScoringCallback(keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs):
         print("")
         print(f"Epoch #{epoch+1} finished. Logs: {logs}")
-        self.score_model.print_weights()
+        if self.score_model.model_type == "linear-bottleneck":
+            self.score_model.eval_bottleneck_model()        
+        if self.score_model.model_type == "predict-score":
+            self.score_model.eval_score_predictor()
 
