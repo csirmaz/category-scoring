@@ -163,7 +163,7 @@ class ScoringModel:
         # Gather the linear model
         weights = [w[0] for w in data["encode"]["weights"]]
         raw_thresholds = self.extract_thresholds(data)
-        thresholds = [t - data['encode']['biases'][0] for t in raw_thresholds]
+        thresholds = [("inf" if t == "inf" else t - data["encode"]["biases"][0]) for t in raw_thresholds]
         
         # Print parameters
         input_labels = self.data_generator.input_labels()
@@ -175,6 +175,7 @@ class ScoringModel:
             
         # Try the linear model
         self.try_linear_model(weights, thresholds)
+        self.visualize_linear_model(weights, thresholds)
         
         print("----- end -----")
 
@@ -206,42 +207,79 @@ class ScoringModel:
         return thresholds
     
     
+    def linear_model_predict(self, normalized_inputs, weights, thresholds):
+        """Given a vector of normalized inputs, return the category the learnt linear model predicts"""
+        # Calculate linear combination
+        score = 0
+        for j, v in enumerate(normalized_inputs):
+            score += weights[j] * v
+            
+        #print(f"Raw inputs: {raw_inputs}")
+        #print(f"Normalized: {normalized_inputs}")
+        #print(f"Score: {score}")
+        
+        # Use thresholds to predict category
+        if "inf" in thresholds or thresholds[0] > thresholds[1]:
+            # The middle category is never predicted
+            category = "n/a"
+        elif score < thresholds[0]:
+            category = 0
+        elif score < thresholds[1]:
+            category = 1
+        else:
+            category = 2
+        return score, category
+
+    
     def try_linear_model(self, weights, thresholds):
-        """Try the linear model learnt by the linear_bottleneck model"""
+        """Try the linear model learnt by the linear_bottleneck model on a few samples"""
         samples = 10
         for i in range(samples):
             raw_inputs = self.data_generator.rnd_inputs()
             normalized_inputs = self.data_generator.normalize_inputs(raw_inputs)
             target = self.data_generator.input_to_category(raw_inputs)[0]
-            
-            # Calculate linear combination
-            score = 0
-            for j, v in enumerate(normalized_inputs):
-                score += weights[j] * v
-                
-            #print(f"Raw inputs: {raw_inputs}")
-            #print(f"Normalized: {normalized_inputs}")
-            #print(f"Score: {score}")
-            
-            # Use thresholds to predict category
-            if thresholds[0] > thresholds[1]:
-                # The middle category is never predicted
-                category = "n/a"
-            elif score < thresholds[0]:
-                category = 0
-            elif score < thresholds[1]:
-                category = 1
-            else:
-                category = 2
-            
+            score, category = self.linear_model_predict(normalized_inputs, weights, thresholds)            
             print(f"Sample #{i}: target={target} score={score:+.2f} predicted={category} {'ok' if category==target else 'x'}")
+            
+            
+    def visualize_linear_model(self, weights, thresholds):
+        """Generate a histogram of the scores returned by the linear_bottleneck model"""
+        inputs = self.get_data_batch()[0]
+        scores = []
+        for i in range(config["batch_size"]):
+            score, category = self.linear_model_predict(inputs[i], weights, thresholds)
+            scores.append(score)
+        min_score = min(scores)
+        max_score = max(scores)
+        horiz_step = (max_score - min_score) / 60.
+        histogram = [0 for i in range(61)]
+        for s in scores:
+            v = int((s - min_score) / horiz_step)
+            histogram[v] += 1
+        vertical_step = max(histogram) / 10.
+        for row in range(10):
+            for i, v in enumerate(histogram):
+                if v > (10 - row - 1) * vertical_step:
+                    s = i * horiz_step + min_score
+                    if "inf" in thresholds or thresholds[0] > thresholds[1]:
+                        c = "N"
+                    elif s < thresholds[0]:
+                        c = "."
+                    elif s < thresholds[1]:
+                        c = "o"
+                    else:
+                        c = "+"
+                    print(c, end="")
+                else:
+                    print(" ", end="")
+            print("")
         
         
     def eval_score_predictor(self):
         """Evaluate the score predictor model"""
         print("----- Evaluating the score predictor model -----")
         y = self.model.predict_on_batch(self.get_data_batch()[0])
-        # visualize the values
+        # visualize the values in a histogram
         # -.5 to 2.5
         histogram = [0 for i in range(60)]
         for v in y:
